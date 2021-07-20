@@ -1,0 +1,429 @@
+
+/*
+- Estimar el Gini antes y despues de T&T
+- Calcular el cambio en el Gini debido a considerar T&T
+- Analizar el efecto en los distintos espacios del país
+*/
+
+
+/* ¿como se calcula el Gini?
+- Yamada, Castro y Oviedo (2016) Revisitando el coeficiente
+ de Gini en el Perú: El rol de las políticas públicas en 
+ la evolución de la desigualdad
+
+Hay distintas medidas de ingreso que se pueden considerar 
+para obtener el gini:
+- Ingreso laboral (+) A rojo
+- Ingreso por renta (+) B  verde
+- Transferencias monetarias privadas netas (+) C morado
+- Transferencias monetarias públicas (+) D
+- Transferencias no monetarias privadas (+) E
+- Transferencias no monetarias públicas (+) F
+- Pensiones laborales públicas recibidas (+) G
+- Pago de impuestos H
+- Pago de contribución laboral I
+
+Para ingreso bruto: A + B + C + E + F
+Para ingreso neto de T&T: A + B + C + E + F + D
+
+* Hay distintos comandos para estimar
+- fastgini
+- ineqerr
+- inequal
+- rspread
+- descogini
+*/
+
+
+foreach m of numlist 0/26{
+	matrix ginis_`m' = J(17,8,.)
+	matrix rownames ginis_`m' = 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020
+	matrix colnames ginis_`m' = beta se ci_up ci_bot beta_sinbono se_sinbono ci_up_sinbono ci_bot_sinbono
+}
+
+foreach m of numlist 0/26{
+	matrix ingreso_`m' = J(17,7,.)
+	matrix rownames ingreso_`m' = 2004 2005 2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020
+	matrix colnames ingreso_`m' = mean se_mean ci_up_mean ci_bot_mean p10 p50 p90 
+}
+
+
+foreach n of numlist 2004/2020{
+
+	use "/Users/joseantoniomendozasanchez/Dropbox/Bases/ENAHO/`n'/sumaria-`n'", clear
+
+	gen fac2 = factor07*mieperho
+
+	svyset conglome [pweight = fac2], strata(estrato)
+
+	gen rural = (inlist(estrato,6,7,8))
+
+	gen dpto = substr(ubigeo,1,2)
+	destring(dpto), replace
+
+	gen prov = substr(ubigeo,1,4)
+
+	gen lima = (dpto == 7 | prov == "1501")
+
+	tab dpto, gen(dpto_)
+	drop dpto_15 dpto_7
+
+	gen dpto_15 = (prov == "1501" | dpto == 7)
+
+	gen dpto_26 = (dpto == 15 & prov != "1501")
+
+	gen pov = (inlist(pobreza,1,2))
+
+	gen pov_x = (inlist(pobreza,1))
+
+	egen ing3 = rowtotal(inghog2d ingtprhd ingtpuhd)
+
+	if `n' >= 2004 & `n' <=2011{
+		gen gasto_pc_m = gashog2d/(mieperho*12)
+		gen ingreso_pc_m = ing3/(mieperho*12)
+	}
+	if `n' >= 2012 & `n' <=2019{
+		gen gasto_pc_m = gashog2d/(mieperho*12*ld)
+		gen ingreso_pc_m = ing3/(mieperho*12*ld)		
+	}
+	if `n' == 2020{
+		egen bonos = rowtotal(ingtpu06 ingtpu07 ingtpu08 ingtpu09)
+		replace bonos = -bonos
+
+		egen gasto_sinbono = rowtotal(gashog2d bonos)
+		egen ingreso_sinbono = rowtotal(ing3 bonos)
+
+		gen ingreso_pc_m = inghog2d/(mieperho*12*ld)		
+		gen ingreso_pc_m_sinbono = ingreso_sinbono/(mieperho*12*ld)
+
+		gen gasto_pc_m = gashog2d/(mieperho*12*ld)
+		gen gasto_pc_m_sinbono = gasto_sinbono/(mieperho*12*ld)
+	}
+
+	foreach d of numlist 0/6 8/26{
+
+		if `d' == 0{
+
+			if `n' == 2020{
+				svylorenz ingreso_pc_m //  0.3426408	
+				local pos = `n' -2004+1
+				matrix ginis_`d'[`pos',1] = e(gini)
+				matrix ginis_`d'[`pos',2] = e(se_gini)		
+				matrix ginis_`d'[`pos',3] = e(gini)+1.96*e(se_gini)
+				matrix ginis_`d'[`pos',4] = e(gini)-1.96*e(se_gini)
+
+				svy: mean ingreso_pc_m
+				scalar mean = e(b)[1,1]			
+				scalar var = e(V)[1,1]
+				scalar n = e(N)
+				matrix ingreso_`d'[`pos',1] = mean
+				matrix ingreso_`d'[`pos',2] = (var*(0.5))/(n*(0.5))
+				matrix ingreso_`d'[`pos',3] = mean + 1.96*[(var*(0.5))/(n*(0.5))]
+				matrix ingreso_`d'[`pos',4] = mean - 1.96*[(var*(0.5))/(n*(0.5))]
+				
+				_pctile ingreso_pc_m [w=fac2], p(10)
+				matrix ingreso_`d'[`pos',5] = r(r1)
+				_pctile ingreso_pc_m [w=fac2], p(50)
+				matrix ingreso_`d'[`pos',6] = r(r1)
+				_pctile ingreso_pc_m [w=fac2], p(90)
+				matrix ingreso_`d'[`pos',7] = r(r1)
+
+				svylorenz ingreso_pc_m_sinbono //  0.3426408	
+				local pos = `n' -2004+1
+				matrix ginis_`d'[`pos',5] = e(gini)
+				matrix ginis_`d'[`pos',6] = e(se_gini)		
+				matrix ginis_`d'[`pos',7] = e(gini)+1.96*e(se_gini)
+				matrix ginis_`d'[`pos',8] = e(gini)-1.96*e(se_gini)
+			}
+			else{
+				svylorenz ingreso_pc_m //  0.3426408	
+				local pos = `n' -2004+1
+				matrix ginis_`d'[`pos',1] = e(gini)
+				matrix ginis_`d'[`pos',2] = e(se_gini)	
+				matrix ginis_`d'[`pos',3] = e(gini)+1.96*e(se_gini)
+				matrix ginis_`d'[`pos',4] = e(gini)-1.96*e(se_gini)
+
+				svy: mean ingreso_pc_m
+				scalar mean = e(b)[1,1]			
+				scalar var = e(V)[1,1]
+				scalar n = e(N)
+				matrix ingreso_`d'[`pos',1] = mean
+				matrix ingreso_`d'[`pos',2] = (var*(0.5))/(n*(0.5))
+				matrix ingreso_`d'[`pos',3] = mean + 1.96*[(var*(0.5))/(n*(0.5))]
+				matrix ingreso_`d'[`pos',4] = mean - 1.96*[(var*(0.5))/(n*(0.5))]
+
+				_pctile ingreso_pc_m [w=fac2], p(10)
+				matrix ingreso_`d'[`pos',5] = r(r1)
+				_pctile ingreso_pc_m [w=fac2], p(50)
+				matrix ingreso_`d'[`pos',6] = r(r1)
+				_pctile ingreso_pc_m [w=fac2], p(90)
+				matrix ingreso_`d'[`pos',7] = r(r1)	
+			}	
+		}
+
+		if `d' != 0{
+
+			if `n' == 2020{
+				svylorenz ingreso_pc_m, subpop(dpto_`d') //  0.3426408	
+				local pos = `n' -2004+1
+				matrix ginis_`d'[`pos',1] = e(gini)
+				matrix ginis_`d'[`pos',2] = e(se_gini)		
+				matrix ginis_`d'[`pos',3] = e(gini)+1.96*e(se_gini)
+				matrix ginis_`d'[`pos',4] = e(gini)-1.96*e(se_gini)
+
+				svy, subpop(dpto_`d'): mean ingreso_pc_m
+				scalar mean = e(b)[1,1]			
+				scalar var = e(V)[1,1]
+				scalar n = e(N)
+				matrix ingreso_`d'[`pos',1] = mean
+				matrix ingreso_`d'[`pos',2] = (var*(0.5))/(n*(0.5))
+				matrix ingreso_`d'[`pos',3] = mean + 1.96*[(var*(0.5))/(n*(0.5))]
+				matrix ingreso_`d'[`pos',4] = mean - 1.96*[(var*(0.5))/(n*(0.5))]
+
+				_pctile ingreso_pc_m [w=fac2] if dpto_`d' == 1, p(10)
+				matrix ingreso_`d'[`pos',5] = r(r1)
+				_pctile ingreso_pc_m [w=fac2] if dpto_`d' == 1, p(50)
+				matrix ingreso_`d'[`pos',6] = r(r1)
+				_pctile ingreso_pc_m [w=fac2] if dpto_`d' == 1, p(90)
+				matrix ingreso_`d'[`pos',7] = r(r1)
+
+				svylorenz ingreso_pc_m_sinbono, subpop(dpto_`d') //  0.3426408	
+				local pos = `n' -2004+1
+				matrix ginis_`d'[`pos',5] = e(gini)
+				matrix ginis_`d'[`pos',6] = e(se_gini)		
+				matrix ginis_`d'[`pos',7] = e(gini)+1.96*e(se_gini)
+				matrix ginis_`d'[`pos',8] = e(gini)-1.96*e(se_gini)
+			}
+			else{
+				svylorenz ingreso_pc_m, subpop(dpto_`d') //  0.3426408	
+				local pos = `n' -2004+1
+				matrix ginis_`d'[`pos',1] = e(gini)
+				matrix ginis_`d'[`pos',2] = e(se_gini)		
+				matrix ginis_`d'[`pos',3] = e(gini)+1.96*e(se_gini)
+				matrix ginis_`d'[`pos',4] = e(gini)-1.96*e(se_gini)
+
+				svy, subpop(dpto_`d'): mean ingreso_pc_m
+				scalar mean = e(b)[1,1]			
+				scalar var = e(V)[1,1]
+				scalar n = e(N)
+				matrix ingreso_`d'[`pos',1] = mean
+				matrix ingreso_`d'[`pos',2] = (var*(0.5))/(n*(0.5))
+				matrix ingreso_`d'[`pos',3] = mean + 1.96*[(var*(0.5))/(n*(0.5))]
+				matrix ingreso_`d'[`pos',4] = mean - 1.96*[(var*(0.5))/(n*(0.5))]
+
+				_pctile ingreso_pc_m [w=fac2] if dpto_`d' == 1, p(10)
+				matrix ingreso_`d'[`pos',5] = r(r1)
+				_pctile ingreso_pc_m [w=fac2] if dpto_`d' == 1, p(50)
+				matrix ingreso_`d'[`pos',6] = r(r1)
+				_pctile ingreso_pc_m [w=fac2] if dpto_`d' == 1, p(90)
+				matrix ingreso_`d'[`pos',7] = r(r1)
+
+			}	
+		}
+
+	}
+
+}
+
+/*			Gini       	*/
+
+clear
+foreach m of numlist 0/6 8/26{
+	clear
+	svmat ginis_`m'
+	rename (* ) (beta se ci_up ci_bot beta_sinbono se_sinbono ci_up_sinbono ci_bot_sinbono)
+	gen i = `m'
+	gen t =  2004+_n-1
+	tempfile ginis_`m'
+	save `ginis_`m''
+}
+
+clear 
+foreach m of numlist 0/6 8/26{
+	append using `ginis_`m''
+}
+
+label define dptos 0 "Peru" 1 "Amazonas" 2 "Ancash" 3 "Apurimac" 4 "Arequipa" 5 "Ayacucho" ///
+ 6 "Cajamarca" 8 "Cusco" 9 "Huancavelica" 10 "Huanuco" 11 "Ica" 12 "Junin" ///
+ 13 "La Libertad" 14 "Lambayeque" 15 "Lima Metropolitana y Callao " 16 "Loreto" 17 "Madre de Dios" 18 "Moquegua" ///
+ 19 "Pasco" 20 "Piura" 21 "Puno" 22 "San Martin" 23 "Tacna" 24 "Tumbes" 25 "Ucayali" 26 "Lima Provincias"
+label values i dptos
+
+* Fill the gaps on beta sin bono
+
+replace beta_sinbono = beta if beta_sinbono ==. 
+replace se_sinbono = se if se_sinbono == .
+replace ci_up_sinbono = ci_up if ci_up_sinbono == .
+replace ci_bot_sinbono = ci_bot if ci_bot_sinbono == .
+
+
+xtset i t
+line beta beta_sinbono t if i == 0
+
+twoway ///
+(line beta t if i == 0, lcolor(gs0)) ///
+(rcap ci_bot ci_up t if i == 0, lcolor(gs0%50)) ///
+(line beta t if i == 5, lcolor(red)) ///
+(rcap ci_bot ci_up t if i == 5, lcolor(red%50)) ///
+(line beta t if i == 11, lcolor(blue)) ///
+(rcap ci_bot ci_up t if i == 11, lcolor(blue%50)) ///
+, xlabel(2004(1)2020 , labsize(*0.8)) xtitle("") ylabel(0.2(0.05)0.6, labsize(*0.7)) ///
+legend(order( 1 "Perú" 3 "Ayacucho" 5 "Ica") col(1) pos(7) ring(0) size(*0.6)) ///
+note("Intervalos de confianza al 95% considerando el error estándar asintótico.", size(*0.8))
+
+preserve
+keep if t == 2020 | t == 2019
+
+keep t i beta se
+
+replace beta = beta*100
+reshape wide beta se , i(i) j(t)
+
+gen dif = beta2020 - beta2019
+
+* Agregar si son significativos o no
+twoway ///
+(scatter beta2019 dif if i == 0, ///
+mlabel(i) mlabsize(*0.6) msize(*0.7) mcolor(blue) mlabcolor(blue) mlabpos(9)) ///
+(scatter beta2019 dif if i == 5, ///
+mlabel(i) mlabsize(*0.6) msize(*0.7) mcolor(red) mlabcolor(red) mlabpos(9)) ///
+(scatter beta2019 dif if i == 11, ///
+mlabel(i) mlabsize(*0.6) msize(*0.7) mcolor(green) mlabcolor(green) mlabpos(9)) ///
+(scatter beta2019 dif if i != 0 & i != 5 & i != 11, ///
+mlabel(i) mlabsize(*0.6) msize(*0.5) mcolor(gs0) mlabcolor(black) ) ///
+, xlabel(-2 (1) 7, grid labsize(*0.6)) ylabel(26 (2) 46, grid labsize(*0.6)) ///
+xtitle("Cambio en Gini 2020-2019", size(*0.6)) ytitle("2019", size(*0.6)) legend(off) xsize(2) ysize(2)
+restore
+
+/*		       Ingreso 			*/
+
+clear
+foreach m of numlist 0/6 8/26{
+	clear
+	svmat ingreso_`m'
+	rename (* ) (mean se ci_up_mean ci_bot_mean p10 p50 p90)
+	gen i = `m'
+	gen t =  2004+_n-1
+	tempfile ingreso_`m'
+	save `ingreso_`m''
+}
+
+clear 
+foreach m of numlist 0/6 8/26{
+	append using `ingreso_`m''
+}
+
+label define dptos 0 "Peru" 1 "Amazonas" 2 "Ancash" 3 "Apurimac" 4 "Arequipa" 5 "Ayacucho" ///
+ 6 "Cajamarca" 8 "Cusco" 9 "Huancavelica" 10 "Huanuco" 11 "Ica" 12 "Junin" ///
+ 13 "La Libertad" 14 "Lambayeque" 15 "Lima M. y Callao " 16 "Loreto" 17 "Madre de Dios" 18 "Moquegua" ///
+ 19 "Pasco" 20 "Piura" 21 "Puno" 22 "San Martin" 23 "Tacna" 24 "Tumbes" 25 "Ucayali" 26 "Lima Provincias"
+label values i dptos
+
+gen p90p10ratio = p90/p10
+gen p50p10ratio = p50/p10
+gen p90p50ratio = p90/p50
+
+*keep if t == 2020
+sort mean
+graph dot  mean p10 p50 p90 if t == 2020 | t == 2010  , ///
+over(t,  lab(labsize(*0.4)))   ///
+over(i, sort(1) lab(labsize(*0.4)))  xsize(2) ysize(2) ///
+marker(1, mcolor(black) msize(*0.5) ) marker(2, mcolor(red) msize(*0.5)) ///
+marker(3, mcolor(blue) msize(*0.5)) marker(4, mcolor(green) msize(*0.5)) ///
+ylabel(0(250)2500, labsize(*0.5)) ///
+legend(order(1 "Promedio" 2 "Percentil 10" 3 "Percentil 50" 4 "Percentil 90")size(*0.6) cols(4))
+
+sort mean
+graph dot  mean p10 p50 p90 if t == 2020 | t == 2019  , ///
+over(t,  lab(labsize(*0.4)))   ///
+over(i, sort(1) lab(labsize(*0.4)))  xsize(2) ysize(2) ///
+marker(1, mcolor(black) msize(*0.5) ) marker(2, mcolor(red) msize(*0.5)) ///
+marker(3, mcolor(blue) msize(*0.5)) marker(4, mcolor(green) msize(*0.5)) ///
+ylabel(0(250)2750, labsize(*0.5)) ///
+legend(order(1 "Promedio" 2 "Percentil 10" 3 "Percentil 50" 4 "Percentil 90")size(*0.6) cols(4))
+
+graph dot p90p10ratio p50p10ratio p90p50ratio if i == 0 & p90p10ratio >=2, ///
+over(t, lab(labsize(*0.6))) ///
+marker(1, mcolor(black) msize(*0.7)) marker(2, mcolor(red) msize(*.7)) ///
+marker(3, mcolor(blue) msize(*0.7)) ///
+ylabel(0(1)12 , labsize(*0.7)) xsize(1) ysize(1.25)  ///
+legend(order(1 "Ratio P90/P10" 2 "Rario P50/P10" 3 "Ratio P90/P50") cols(3) size(*0.8))
+
+
+/*
+Ingreso Laboral
+INGNETHD: ingreso neto de la actividad principal monetario (dependiente) 
+INGINDHD: ingreso por actividad principal independiente 
+INSEDTHD: ingreso bruto de la actividad secundaria dependiente 
+YINSEDTHD: ingreso bruto de la actividad secundaria 
+INGSEIHD: ingreso neto de la actividad secundaria independiente 
+INGEXTHD: ingresos extraordinarios por trabajo 
+PAGESPHD: ingreso por pago en especie de la actividad principal 
+INGAUTHD: ingreso por autoconsumo de la actividad principal independiente 
+PAESECHD: ingreso pago en especie de la actividad secundaria dependiente 
+YPAESECHD: ingreso pago en especie de la actividad secundaria 
+ISECAUHD: ingreso por autoconsumo de la actividad secundaria independiente 
+
+Transferencias privadas (no está en inghog2d)
+Ingtprhd: ingreso por transferencia corrientes privada 
+
+Transferencias públicas (no está en inghog2d)
+ingtpuhd: ingreso por transferencia corrientes publica 
+
+Ingreso por rentas 	
+INGRENHD: ingreso por rentas de la propiedad monetaria 
+IA01HD: ingreso alquiler imputado de la vivienda 
+GA04HD: gasto por alquiler imputado  (resta)
+
+Remesas internas y externas
+INGTRAHD: ingreso por transferencias corrientes monetarias del país
+INGTEXHD: ingreso por transferencias corrientes del extranjero 
+
+Transferencias No Monetarias Públicas 	
+GRU13HD1: grupo 1 : alimentos - donación pública
+GRU23HD1: grupo 2 : vestido y calzado - donación publica 
+GRU33HD1: grupo 3 : alquiler de vivienda, combustible, electricidad y conservación de la v 
+GRU43HD1: grupo 4: muebles, enseres y mantenimiento de la vivienda- donación pública
+GRU53HD1: grupo 5: cuidado, conservación de la salud y servicios médicos – donación pública
+GRU63HD1: grupo 6: transportes y comunicaciones – donación pública
+GRU73HD1: grupo 7: esparcimiento, diversión, servicios culturales y de enseñanza - donaciónGRU73HD2
+GRU83HD1: grupo 8: otros bienes y servicios – donación pública
+GRU14HD3: alimentos preparados consumir en el hogar - donado publico 
+
+Transferencias No Monetarias Privadas
+GRU13HD2: grupo 1 : alimentos - donación privada
+GRU23HD2: grupo 2 : vestido y calzado - donación privada 
+GRU33HD2: grupo 3 : alquiler de vivienda, combustible, electricidad y conservación de la v
+GRU43HD2: grupo 4: muebles, enseres y mantenimiento de la vivienda- donación privada
+GRU53HD2: grupo 5: ciudado, conservación de la salud y servicios médicos – donación privada
+GRU63HD2: grupo 6: transportes y comunicaciones – donación privada
+GRU73HD3: grupo 7 : esparcimiento, diversión, servicios culturales y de enseñanza - otros 
+GRU83HD2: grupo 8: otros bienes y servicios – donación privada
+GRU14HD4: alimentos preparados consumir en el hogar - donado privado 
+
+Transferencias No Monetarias Otros
+GRU13HD3: grupo 1 : alimentos - otros gastos 
+GRU23HD3: grupo 2 : vestido y calzado - otros 
+GRU24HD: grupo 2 : vestido y calzado - no gasto, no sabe 
+GRU33HD3: grupo 3: alquiler de vivienda, combustible, electricidad y conservacion de la v
+GRU34HD: grupo 3: alquiler de vivienda, combustible, electricidad y conservacion de la v
+GRU43HD3: grupo 4 : muebles, enseres y mantenimiento de la vivienda - otros 
+GRU44HD: grupo 4: muebles, enseres y mantenimiento de la vivienda – no gastó , no sabe
+GRU53HD3: grupo 5 : cuidado, conservación de la salud y servicios médicos - otros 
+GRU54HD:  grupo 5: cuidado, conservación de la salud y servicios médicos – no gastó, no sabe
+GRU63HD3: grupo 6 : transportes y comunicaciones - otros 
+GRU64HD: grupo 6 : transportes y comunicaciones - no gasto, no sabe 
+GRU74HD: grupo 7 : esparcimiento, diversión, servicios culturales y de enseñanza - no gas 
+GRU83HD3: grupo 8 : otros bienes y servicios - otros 
+GRU84HD: grupo 8: otros bienes y servicios – no gastó, no sabe 
+GRU14HD5: alimentos preparados consumir en el hogar - otros 
+INGOEXHD: otros ingresos extraordinarios 
+IG06HD: ingresos y gastos por alimentos consumidos fuera del hogar-no pago 
+IG08HD: ingresos y gastos, otros – no pagó
+SIG24: ingresos y gastos por alimentos para consumir en el hogar 
+SIG26: ingresos y gastos por alimentos consumidos fuera del hogar (menores de 14 años)
+
+*/
+
+
+
